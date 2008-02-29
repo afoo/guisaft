@@ -45,7 +45,11 @@ class SaftClient(object):
     def send(self):
         user, host = self.toaddr.split('@') # evtl doch seperat reingeben?
         self.sock.connect((host, 487))
-        # ...
-
+	self.sock.send("FROM stephan@localhost", 0) #ips später durch variablen ersetzen
+	self.sock.send("TO stephan@"+self.toaddr, 0) #? Keine ahnung ob das mit den strings so geht in python
+	self.sock.send("FILE "+self.filename) 
+	self.sock.send("SIZE "+self.filesze self.filesize)
+	self.sock.send("DATA "+self.fileobj) 
+	self.sock.send("QUIT")
 
     
