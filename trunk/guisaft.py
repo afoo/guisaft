@@ -32,6 +32,9 @@ else:
 import sys
 import os
 import socket
+from threading import Thread
+
+from gettext import gettext as _
 
 from saft.client import SaftClient
 
@@ -42,10 +45,11 @@ class GuiSaftApp(object):
 
     def __init__(self):
         self.glade = gtk.glade.XML(self.MAINWIN_GLADEFILE)
+        # TODO: set labels programmaticly to facilitate i18n
         self.window = self.glade.get_widget('window1')
         self.filechooser = self.glade.get_widget('filechooserbutton1')
         self.toEntry = self.glade.get_widget('toEntry') # TODO: actually change the control to have that name
-        self.window.connect('destroy', gtk.main_quit)
+        self.window.connect('destroy', self.quit)
         self.glade.signal_autoconnect({
                 'on_applyButton_clicked': self.onApplyClick,
                 'on_filechooserbutton1_file_set': self.onFileSet,
@@ -54,7 +58,13 @@ class GuiSaftApp(object):
         username = self.getUserName()
         hostname = socket.gethostname()
         self.fromaddr = '%s@%s' % (username, hostname)
+        self.sendThread = None
 
+    def quit(self, *a):
+        if self.sendThread is not None:
+            self.sendThread.join()
+        gtk.main_quit()
+        
     def getUserName(self):
         if have_win32api:
             return win32api.GetUserName()
@@ -65,14 +75,15 @@ class GuiSaftApp(object):
         print 'apply button clicked!'
         toaddr = self.toEntry.get_text()
         if self.filename is None:
-            self.showError('no file selected')
+            self.showError(_('no file selected'))
         elif not os.path.isfile(self.filename):
-            self.showError('%s is not a valid file' % self.filename)
+            self.showError(_('%s is not a valid file') % self.filename)
         elif toaddr = '' or '@' not in toaddr:
-            self.showError('no (valid) recipient address given')
+            self.showError(_('no (valid) recipient address given'))
         else:
-            # TODO figure out if multithreading is to be handled here or directly in saft.client
             sc = SaftCient(self.fromaddr, toaddr, self.filename, self.progressCallback)
+            self.sendThread = SendThread(sc)
+            self.sendthread.start()
             
     def onFileSet(self, widget):
         self.filename = widget.get_filename()
@@ -87,6 +98,13 @@ class GuiSaftApp(object):
         dialog.run()
         dialog.destroy()
         
+class SendThread(Thread):
+
+    def __init__(self, sc):
+        self.sc = sc
+
+    def run(self):
+        self.sc.send()
 
 def main():
     app = GuiSaftApp()
