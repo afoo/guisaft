@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE glade-interface SYSTEM "glade-2.0.dtd">
-<!--Generated with glade3 3.4.1 on Fri Feb 29 00:55:35 2008 -->
+<!--Generated with glade3 3.4.1 on Fri Feb 29 20:19:35 2008 -->
 <glade-interface>
   <widget class="GtkWindow" id="window1">
     <property name="visible">True</property>
@@ -50,7 +50,7 @@
               </widget>
             </child>
             <child>
-              <widget class="GtkEntry" id="entry1">
+              <widget class="GtkEntry" id="toEntry">
                 <property name="visible">True</property>
                 <property name="can_focus">True</property>
                 <property name="events">GDK_POINTER_MOTION_MASK | GDK_POINTER_MOTION_HINT_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK</property>
