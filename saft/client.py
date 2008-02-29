@@ -24,7 +24,7 @@ class SaftClient(object):
         'toaddr', # str 
         'filename', # str
         'fileobj', # file
-        'filesize', # int (bytes?)
+        'filesize', # int (bytes)
         'progress_callback', # func
         'compress', # bool
         'sock', # socket
@@ -52,4 +52,8 @@ class SaftClient(object):
 	self.sock.send("DATA "+self.fileobj) 
 	self.sock.send("QUIT")
 
-    
+
+if __name__ == '__main__':
+    def cb(progress): pass
+    c = SaftClient('me@localhost', 'stephan@localhost', '/etc/passwd', cb)
+    c.send()
