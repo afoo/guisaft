@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*- 
+
 # This file is part of guisaft
 # 
 # guisaft is free software: you can redistribute it and/or modify
@@ -37,7 +39,7 @@ class SaftClient(object):
         self.progress_callback = prog_cb
         self.compress = compress
 
-        self.fileobj = open(filename, 'b')
+        self.fileobj = open(filename, 'r')
         self.filesize = os.path.getsize(filename)
   
         self.sock = socket.socket()
@@ -45,12 +47,21 @@ class SaftClient(object):
     def send(self):
         user, host = self.toaddr.split('@') # evtl doch seperat reingeben?
         self.sock.connect((host, 487))
-	self.sock.send("FROM stephan@localhost", 0) #ips später durch variablen ersetzen
-	self.sock.send("TO stephan@"+self.toaddr, 0) #? Keine ahnung ob das mit den strings so geht in python
-	self.sock.send("FILE "+self.filename) 
-	self.sock.send("SIZE "+self.filesze self.filesize)
-	self.sock.send("DATA "+self.fileobj) 
-	self.sock.send("QUIT")
+	self.sock.send("FROM %s \r\n" % self.fromaddr) 
+        print self.sock.recv(1024)
+	self.sock.send("TO %s \r\n" % user)
+        print self.sock.recv(1024) 
+	self.sock.send("FILE %s \r\n" % self.filename) 
+        print self.sock.recv(1024)
+	self.sock.send("SIZE %i %i\r\n" % (self.filesize, self.filesize))
+        print self.sock.recv(1024)
+        self.sock.send("DATA\r\n")
+	self.sock.send(self.fileobj.read())
+        self.sock.send("\r\n") 
+        print self.sock.recv(1024)
+	self.sock.send("QUIT \r\n")
+        print self.sock.recv(1024)
+        
 
 
 if __name__ == '__main__':
