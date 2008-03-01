@@ -62,14 +62,9 @@ class SaftClient(object):
         #now its time to pfusch
         i = 0
         cb(0.0)
-        while i < self.filesize:
-            if (self.filesize - i) > 1024:
-			    i = i+self.sock.send(self.fileobj.read(1024)) #eh? error ones?
-			    cb(i/float(self.filesize))
-            else:
-			    i = i+self.sock.send(self.fileobj.read(self.filesize - i)) #eh eh?
-			    cb(i/float(self.filesize))
-
+        while i < self.filesize:           
+            i += self.sock.send(self.fileobj.read(1024)) #eh? error ones?
+            cb(i/float(self.filesize))
 
         self.sock.send("\r\n") 
         print self.sock.recv(1024)
@@ -79,9 +74,9 @@ class SaftClient(object):
         
 
 if __name__ == '__main__':
-    #def cb(progress): pass
-    def cb(p):
-        print p
+    def cb(progress): pass
+    #def cb(p):
+        #print p
 
     c = SaftClient('me@localhost', 'stephan@localhost', '/etc/passwd', cb)
     c.send()
