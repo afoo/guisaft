@@ -45,38 +45,41 @@ class SaftClient(object):
         self.sock = socket.socket()
 
     def send(self):
-		user, host = self.toaddr.split('@') # evtl doch seperat reingeben?
-		self.sock.connect((host, 487))
-		self.sock.send("FROM %s \r\n" % self.fromaddr) 
-		print self.sock.recv(1024)
-		self.sock.send("TO %s \r\n" % user)
-		print self.sock.recv(1024) 
-		self.sock.send("FILE %s \r\n" % self.filename) 
-		print self.sock.recv(1024)
-		self.sock.send("SIZE %i %i\r\n" % (self.filesize, self.filesize))
-		print self.sock.recv(1024)       
+        user, host = self.toaddr.split('@') # evtl doch seperat reingeben?
+        self.sock.connect((host, 487))
+        self.sock.send("FROM %s \r\n" % self.fromaddr) 
+        print self.sock.recv(1024)
+        self.sock.send("TO %s \r\n" % user)
+        print self.sock.recv(1024) 
+        self.sock.send("FILE %s \r\n" % self.filename) 
+        print self.sock.recv(1024)
+        self.sock.send("SIZE %i %i\r\n" % (self.filesize, self.filesize))
+        print self.sock.recv(1024)       
         
-		self.sock.send("DATA\r\n")
-        #now its time to pfusch
-		i = 0
-		cb(0.0)
-		while i < self.filesize:
-			if (self.filesize - i) > 1024:
-				i = i+self.sock.send(self.fileobj.read(1024)) #eh? error ones?
-				cb(float(i/self.filesize))
-			else:
-				i = i+self.sock.send(self.fileobj.read(1024 - i)) #eh eh?
-				cb(float(i/self.filesize))
+        self.sock.send("DATA\r\n")
+        print self.sock.recv(1024)
 
-		self.sock.send("\r\n") 
-		print self.sock.recv(1024)
-		self.sock.send("QUIT \r\n")
-		print self.sock.recv(1024)
+        #now its time to pfusch
+        i = 0
+        cb(0.0)
+        while i < self.filesize:
+            if (self.filesize - i) > 1024:
+			    i = i+self.sock.send(self.fileobj.read(1024)) #eh? error ones?
+			    cb(i/float(self.filesize))
+            else:
+			    i = i+self.sock.send(self.fileobj.read(self.filesize - i)) #eh eh?
+			    cb(i/float(self.filesize))
+
+
+        self.sock.send("\r\n") 
+        print self.sock.recv(1024)
+        self.sock.send("QUIT \r\n")
+        print self.sock.recv(1024)
         
         
 
 if __name__ == '__main__':
-    # def cb(progress): pass
+    #def cb(progress): pass
     def cb(p):
         print p
 
