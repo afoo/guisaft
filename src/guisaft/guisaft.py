@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+#
 # This file is part of guisaft
 # 
 # guisaft is free software: you can redistribute it and/or modify
@@ -18,6 +20,7 @@ import pygtk
 pygtk.require('2.0')
 import gtk
 import gtk.glade
+import gobject
 
 try:
     import win32api
@@ -30,27 +33,25 @@ import sys
 import os
 import socket
 from threading import Thread
+from Queue import Queue
 
 from gettext import gettext as _
 
-#from saft.client import SaftClient
-class SaftClient(object):
-    def __init__(self, *a):
-        pass
-    def send(self):
-        pass
+from saft.client import SaftClient
 
+OWNPATH = os.path.dirname(__file__)
+    
 class GuiSaftApp(object):
 
-    MAINWIN_GLADEFILE = os.path.join(os.path.dirname(__file__), 'data/guisaft.glade')
-    SENDWIN_GLADEFILE = ''
+    GLADEFILE = os.path.join(OWNPATH, 'data/main_window.glade')
 
     def __init__(self):
-        self.glade = gtk.glade.XML(self.MAINWIN_GLADEFILE)
+        self.glade = gtk.glade.XML(self.GLADEFILE)
         # TODO: set labels programmaticly to facilitate i18n
-        self.window = self.glade.get_widget('window1')
+        # (or use gettext with glade?)
+        self.window = self.glade.get_widget('mainWindow')
         self.filechooser = self.glade.get_widget('filechooserbutton1')
-        self.toEntry = self.glade.get_widget('toEntry') # TODO: actually change the control to have that name
+        self.toEntry = self.glade.get_widget('toEntry')
         self.window.connect('destroy', self.quit)
         self.glade.signal_autoconnect({
                 'on_applyButton_clicked': self.onApplyClick,
@@ -83,27 +84,67 @@ class GuiSaftApp(object):
         elif toaddr == '' or '@' not in toaddr:
             self.showError(_('no (valid) recipient address given'))
         else:
-            sc = SaftClient(self.fromaddr, toaddr, self.filename, self.progressCallback)
-            self.sendThread = SendThread(sc)
-            self.sendthread.start()
+            sc = SaftClient(self.fromaddr, toaddr, self.filename)
+            self.progressWindow = ProgressWindow(sc, self.window)
+
+    def updateProgress(self):
+        if not self.pgQueue.empty():
+            self.progressBar.set_fraction(self.pgQueue.get())
             
     def onFileSet(self, widget):
         self.filename = widget.get_filename()
 
-    def progressCallback(self, progress):
-        # update progressbar
-        pass
-    
     def showError(self, msg):
         dialog = gtk.MessageDialog(self.window, gtk.DIALOG_MODAL, 
                                    gtk.MESSAGE_ERROR, gtk.BUTTONS_OK, msg)
         dialog.run()
         dialog.destroy()
+
+
+class ProgressWindow(object):
+
+    GLADEFILE = os.path.join(OWNPATH, 'data/progress_window.glade')
+    
+    def __init__(self, saftClient, parent):
+        self.saftClient = saftClient
+        self.saftClient.addCallback(self.scCallback)
+        self.glade = gtk.glade.XML(self.GLADEFILE)
+        self.window = self.glade.get_widget('progressWindow')
+        #self.window.parent = parent
+        self.progressBar = self.glade.get_widget('progressBar')
+        self.glade.signal_autoconnect({
+                'on_cancelButton_clicked': self.onCancel})
+        self.quitQueue = Queue()
+        self.pgQueue = Queue()
+        self.sendThread = SendThread(self.saftClient)
+        self.sendThread.start()
+        gobject.timeout_add(100, self.checkProgress)
+
+    def onCancel(self, widget):
+        self.quitQueue.put_nowait('quit')
+        self.window.destroy()
+        self.sendThread.join()
+
+    def scCallback(self, progress):
+        if not self.quitQueue.empty():
+            return False
+        self.pgQueue.put_nowait(progress)
+        return True
+
+    def checkProgress(self):
+        if not self.sendThread.isAlive():
+            return False
+        if not self.pgQueue.empty():
+            self.progressBar.set_fraction(self.pgQueue.get())
+        return True
+        
+
         
 class SendThread(Thread):
 
     def __init__(self, sc):
         self.sc = sc
+        Thread.__init__(self)
 
     def run(self):
         self.sc.send()
