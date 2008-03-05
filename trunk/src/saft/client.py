@@ -18,12 +18,19 @@
 
 import socket
 import os
-import zlib
+import gzip
+import tempfile
 
 DEBUG = True
 def dprint(*a):
     if DEBUG:
         print a
+
+class NoCallbackError(Exception):
+    pass
+
+class CallbackCancel(Exception):
+    pass
 
 class SaftClient(object):
 
@@ -36,19 +43,19 @@ class SaftClient(object):
         'progress_callbacks', # list of functions
         'compress', # bool
         'sock', # socket
+        'tmpfile', # file
         )
 
     def __init__(self, fromaddr, toaddr, filename, compress=True):
         self.fromaddr = fromaddr
         self.toaddr = toaddr
-        self.filename = filename
+        self.filename = os.path.basename(filename)
         self.progress_callbacks = list()
         self.compress = compress
-
-        self.fileobj = open(filename, 'r')
+        self.fileobj = open(filename, 'rb')
         self.filesize = os.path.getsize(filename) 
-
         self.sock = socket.socket()
+        self.tmpfile = None
 
     def addCallback(self, callback):
         self.progress_callbacks.append(callback)
@@ -56,93 +63,73 @@ class SaftClient(object):
     def executeCallbacks(self, progress):
         for cb in self.progress_callbacks:
             if not cb(progress):
-                return False
-        return True
+                raise CallbackCancel()
 
     def send(self):
+        try:
+            self._send()
+        finally:
+            self.fileobj.close()
+            #if self.tmpfile is not None:
+            #    self.tmpfile.close()
+
+    def scmd(self, cmd=''):
+        self.sock.send(cmd + '\r\n')
+        dprint(self.sock.recv(1024))
+    
+    def _send(self):
         if len(self.progress_callbacks) == 0:
-            raise 'some exception'
+            raise NoCallbackError()
         user, host = self.toaddr.split('@') # evtl doch seperat reingeben?
         self.sock.connect((host, 487))
         dprint(self.sock.recv(1024))
-        self.sock.send("FROM %s\r\n" % self.fromaddr) 
-        dprint(self.sock.recv(1024))
-        self.sock.send("TO %s\r\n" % user)
-        dprint(self.sock.recv(1024))
-        self.sock.send("FILE %s\r\n" % self.filename) 
-        dprint(self.sock.recv(1024))
-
-        #compressed = true? if yes, compress the siff and save it temporarely into 'tmp.dat'.
-        if self.compress == True:
-            print "Compress == True:\r\n"
-            tempfile = file( 'tmp.dat', "wb+" )
-            compObj = zlib.compressobj(9)
-            block= self.fileobj.read(2048)
-            while block:
-                cBlock= compObj.compress( block )
-                tempfile.write(cBlock)
-                block= self.fileobj.read(2048)
-            cBlock= compObj.flush()
-            tempfile.write( cBlock )
-            print "Uncompressed size is: "+str(self.filesize)+"\r\n"
-            print "Compressed size is:   "+str(tempfile.tell())+"\r\n"
-            self.sock.send("TYPE BINARY COMPRESSED\r\n") 
-            dprint(self.sock.recv(1024))
-
-            tempfile_size = tempfile.tell()
-            self.sock.send("SIZE %i %i\r\n" % (tempfile_size, self.filesize))
-            dprint(self.sock.recv(1024))
-            self.sock.send("DATA\r\n")
-            dprint(self.sock.recv(1024))
-
-            #now send the compressed siff
+        self.scmd("FROM %s" % self.fromaddr) 
+        self.scmd("TO %s" % user)
+        self.scmd("FILE %s" % self.filename) 
+        if self.compress:
+            dprint("Compress == True")
+            tmpfd, tmpname  = tempfile.mkstemp()
+            self.tmpfile = gzip.GzipFile(tmpname, 'wb+', 9, os.fdopen(tmpfd, 'wb+'))
+            block = self.fileobj.read(2048)
+            while len(block) > 0:
+                self.tmpfile.write(block)
+                block = self.fileobj.read(2048)
+            self.tmpfile.close()
+            self.tmpfile = open(tmpname, 'rb')
+            tmpsize = os.path.getsize(tmpname)
+            dprint("Uncompressed size is: ", str(self.filesize))
+            dprint("Compressed size is:   ", str(tmpsize))
+            self.scmd("TYPE BINARY COMPRESSED") 
+            self.scmd("SIZE %i %i" % (tmpsize, self.filesize))
+            self.scmd("DATA")
             i = 0
-            #if not self.executeCallbacks(0.0): hä? musste ich auskommentieren, sonst hätte ichs ned testen können o_O
-                #return
-            
-            tempfile.seek(0)
-            while i < tempfile_size:           
-                i += self.sock.send(tempfile.read(1024)) 
-                #if not self.executeCallbacks(i/float(tempfile_size)): #dito
-                 #
-                 #return
-
-            print "Fertig"
-            tempfile.close()
-
-            self.sock.send("\r\n") 
-            dprint(self.sock.recv(1024))
-            self.sock.send("QUIT \r\n")
-            dprint(self.sock.recv(1024))
-            self.fileobj.close()
-
-        #if compressed=false, just send uncompressed
+            self.executeCallbacks(0.0)
+            while i < tmpsize:       
+                i += self.sock.send(self.tmpfile.read(1024)) 
+                self.executeCallbacks(i/float(tmpsize))
+            self.tmpfile.close()
+            os.unlink(tmpname)
         else:
-            print "Compress == False:\r\n"
-            self.sock.send("SIZE %i %i\r\n" % (self.filesize, self.filesize))
-            dprint(self.sock.recv(1024))
-            self.sock.send("DATA\r\n")
-            dprint(self.sock.recv(1024))
-
+            dprint("Compress == False")
+            self.scmd("SIZE %i %i" % (self.filesize, self.filesize))
+            self.sock.send("DATA")
             i = 0
-            if not self.executeCallbacks(0.0):
-                return
+            self.executeCallbacks(0.0)
             while i < self.filesize:           
                 i += self.sock.send(self.fileobj.read(1024))
-                if not self.executeCallbacks(i/float(self.filesize)):
-                    return
+                self.executeCallbacks(i/float(self.filesize))
+        self.scmd() 
+        self.scmd("QUIT")
+        self.fileobj.close()
 
-            self.sock.send("\r\n") 
-            dprint(self.sock.recv(1024))
-            self.sock.send("QUIT \r\n")
-            dprint(self.sock.recv(1024))
-            self.fileobj.close()
         
 if __name__ == '__main__':
-    def cb(progress): pass
+    def cb(progress):
+        return True
     #def cb(p):
         #print p
 
-    c = SaftClient('me@localhost', 'stephan@localhost', '/etc/passwd', True)
+    user = os.environ.get('USER', 'me')
+    c = SaftClient('me@localhost', '%s@localhost' % user, '/etc/passwd', True)
     c.addCallback(cb)
     c.send()
