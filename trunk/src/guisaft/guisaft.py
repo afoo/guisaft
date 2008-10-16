@@ -15,12 +15,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from twisted.internet import gtk2reactor
+gtk2reactor.install()
 
 import pygtk
 pygtk.require('2.0')
 import gtk
 import gtk.glade
 import gobject
+
+from twisted.internet import reactor
 
 try:
     import win32api
@@ -32,12 +36,10 @@ else:
 import sys
 import os
 import socket
-from threading import Thread
-from Queue import Queue
 
 from gettext import gettext as _
 
-from saft.client import SaftClient
+from saft.tclient import send_file
 
 OWNPATH = os.path.dirname(__file__)
     
@@ -47,9 +49,11 @@ class GuiSaftApp(object):
 
     def __init__(self):
         self.glade = gtk.glade.XML(self.GLADEFILE)
-        # TODO: set labels programmaticly to facilitate i18n
+        # TODO: set labels programmaticaly to facilitate i18n
         # (or use gettext with glade?)
         self.window = self.glade.get_widget('mainWindow')
+        #self.window.set_type_hint(gtk.gdk.WINDOW_TYPE_HINT_DIALOG)
+        self.window.set_position(gtk.WIN_POS_CENTER)
         self.filechooser = self.glade.get_widget('filechooserbutton1')
         self.toEntry = self.glade.get_widget('toEntry')
         self.window.connect('destroy', self.quit)
@@ -84,17 +88,17 @@ class GuiSaftApp(object):
         elif toaddr == '' or '@' not in toaddr:
             self.showError(_('no (valid) recipient address given'))
         else:
-            sc = SaftClient(self.fromaddr, toaddr, self.filename)
-            self.progressWindow = ProgressWindow(sc, self.window)
+            self.progressWindow = ProgressWindow(self.window)
+            sc = send_file(self.fromaddr, toaddr, self.filename,
+                           self.progressWindow.scCallback)
+            sc.addCallback(self.progressWindow.scDone)
+            sc.addErrback(self.showError)
 
-    def updateProgress(self):
-        if not self.pgQueue.empty():
-            self.progressBar.set_fraction(self.pgQueue.get())
-            
     def onFileSet(self, widget):
         self.filename = widget.get_filename()
 
     def showError(self, msg):
+        msg = str(msg)
         dialog = gtk.MessageDialog(self.window, gtk.DIALOG_MODAL, 
                                    gtk.MESSAGE_ERROR, gtk.BUTTONS_OK, msg)
         dialog.run()
@@ -105,51 +109,25 @@ class ProgressWindow(object):
 
     GLADEFILE = os.path.join(OWNPATH, 'data/progress_window.glade')
     
-    def __init__(self, saftClient, parent):
-        self.saftClient = saftClient
-        self.saftClient.addCallback(self.scCallback)
+    def __init__(self, parent):
         self.glade = gtk.glade.XML(self.GLADEFILE)
         self.window = self.glade.get_widget('progressWindow')
+        self.window.set_position(gtk.WIN_POS_CENTER)
         #self.window.parent = parent
         self.progressBar = self.glade.get_widget('progressBar')
         self.glade.signal_autoconnect({
                 'on_cancelButton_clicked': self.onCancel})
-        self.quitQueue = Queue()
-        self.pgQueue = Queue()
-        self.sendThread = SendThread(self.saftClient)
-        self.sendThread.start()
-        gobject.timeout_add(100, self.checkProgress)
 
     def onCancel(self, widget):
-        self.quitQueue.put_nowait('quit')
         self.window.destroy()
-        self.sendThread.join()
 
     def scCallback(self, progress):
-        if not self.quitQueue.empty():
-            return False
-        self.pgQueue.put_nowait(progress)
-        return True
+        self.progressBar.set_fraction(progress)
 
-    def checkProgress(self):
-        if not self.sendThread.isAlive():
-            return False
-        if not self.pgQueue.empty():
-            self.progressBar.set_fraction(self.pgQueue.get())
-        return True
-        
+    def scDone(self, a):
+        self.progressBar.set_fraction(1.0)
 
         
-class SendThread(Thread):
-
-    def __init__(self, sc):
-        self.sc = sc
-        Thread.__init__(self)
-
-    def run(self):
-        self.sc.send()
-
-
 def main():
     app = GuiSaftApp()
-    gtk.main()
+    reactor.run()

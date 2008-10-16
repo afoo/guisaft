@@ -20,11 +20,13 @@ import socket
 import os
 import gzip
 import tempfile
+import sys
 
 DEBUG = True
 def dprint(*a):
     if DEBUG:
         print a
+        sys.stdout.flush()
 
 class NoCallbackError(Exception):
     pass
@@ -33,18 +35,6 @@ class CallbackCancel(Exception):
     pass
 
 class SaftClient(object):
-
-    __slots__ = (
-        'fromaddr', # str
-        'toaddr', # str 
-        'filename', # str
-        'fileobj', # file
-        'filesize', # int (bytes)
-        'progress_callbacks', # list of functions
-        'compress', # bool
-        'sock', # socket
-        'tmpfile', # file
-        )
 
     def __init__(self, fromaddr, toaddr, filename, compress=True):
         self.fromaddr = fromaddr
@@ -61,6 +51,7 @@ class SaftClient(object):
         self.progress_callbacks.append(callback)
 
     def executeCallbacks(self, progress):
+        dprint('executing callbacks', progress)
         for cb in self.progress_callbacks:
             if not cb(progress):
                 raise CallbackCancel()
@@ -70,8 +61,8 @@ class SaftClient(object):
             self._send()
         finally:
             self.fileobj.close()
-            #if self.tmpfile is not None:
-            #    self.tmpfile.close()
+            if self.tmpfile is not None:
+                self.tmpfile.close()
 
     def scmd(self, cmd=''):
         self.sock.send(cmd + '\r\n')
@@ -87,7 +78,7 @@ class SaftClient(object):
         self.scmd("TO %s" % user)
         self.scmd("FILE %s" % self.filename) 
         if self.compress:
-            dprint("Compress == True")
+            dprint('sending compressed')
             tmpfd, tmpname  = tempfile.mkstemp()
             self.tmpfile = gzip.GzipFile(tmpname, 'wb+', 9, os.fdopen(tmpfd, 'wb+'))
             block = self.fileobj.read(2048)
@@ -112,7 +103,7 @@ class SaftClient(object):
         else:
             dprint("Compress == False")
             self.scmd("SIZE %i %i" % (self.filesize, self.filesize))
-            self.sock.send("DATA")
+            self.scmd("DATA")
             i = 0
             self.executeCallbacks(0.0)
             while i < self.filesize:           
@@ -125,9 +116,8 @@ class SaftClient(object):
         
 if __name__ == '__main__':
     def cb(progress):
+        #print progress
         return True
-    #def cb(p):
-        #print p
 
     user = os.environ.get('USER', 'me')
     c = SaftClient('me@localhost', '%s@localhost' % user, '/etc/passwd', True)
