@@ -45,36 +45,53 @@ OWNPATH = os.path.dirname(__file__)
     
 class GuiSaftApp(object):
 
-    GLADEFILE = os.path.join(OWNPATH, 'data/main_window.glade')
-
     def __init__(self):
-        self.glade = gtk.glade.XML(self.GLADEFILE)
-        # TODO: set labels programmaticaly to facilitate i18n
-        # (or use gettext with glade?)
-        self.window = self.glade.get_widget('mainWindow')
-        #self.window.set_type_hint(gtk.gdk.WINDOW_TYPE_HINT_DIALOG)
-        self.window.set_position(gtk.WIN_POS_CENTER)
-        self.filechooser = self.glade.get_widget('filechooserbutton1')
-        self.toEntry = self.glade.get_widget('toEntry')
-        self.window.connect('destroy', self.quit)
-        self.glade.signal_autoconnect({
-                'on_applyButton_clicked': self.onApplyClick,
-                'on_filechooserbutton1_file_set': self.onFileSet,
-                })
+        win = gtk.Window()
+        win.set_type_hint(gtk.gdk.WINDOW_TYPE_HINT_DIALOG)
+        win.set_position(gtk.WIN_POS_CENTER)
+        win.set_border_width(5)
+        win.set_title('guisaft')
+        win.connect('destroy', self.quit)
+
+        vbox = gtk.VBox()
+        vbox.set_spacing(5)
+        win.add(vbox)
+        
+        self.filechooser = gtk.FileChooserButton('file to send')
+        self.filechooser.connect('file_set', self.onFileSet)
+        vbox.add(self.filechooser)
+
+        hbox = gtk.HBox()
+
+        l = gtk.Label()
+        l.set_text(_('Recipient'))
+        hbox.add(l)
+        
+        self.toEntry = gtk.Entry()
+        hbox.add(self.toEntry)
+
+        vbox.add(hbox)
+        
+        ab = gtk.Button()
+        ab.set_label('gtk-apply')
+        ab.set_use_stock(True)
+        ab.connect('clicked', self.onApplyClick)
+        vbox.add(ab)
+
+        win.show_all()
+        self.window = win
+
         self.filename = None
         username = self.getUserName()
         hostname = socket.gethostname()
         self.fromaddr = '%s@%s' % (username, hostname)
-        self.sendThread = None
 
     def quit(self, *a):
-        if self.sendThread is not None:
-            self.sendThread.join()
-        gtk.main_quit()
+        reactor.stop()
         
     def getUserName(self):
         if have_win32api:
-            return win32api.GetUserName()
+            return win32api.GetUserName().replace(' ', '')
         else:
             return os.environ.get('USER', 'unknown')
                 
@@ -107,18 +124,31 @@ class GuiSaftApp(object):
 
 class ProgressWindow(object):
 
-    GLADEFILE = os.path.join(OWNPATH, 'data/progress_window.glade')
-    
     def __init__(self, parent):
-        self.glade = gtk.glade.XML(self.GLADEFILE)
-        self.window = self.glade.get_widget('progressWindow')
-        self.window.set_position(gtk.WIN_POS_CENTER)
-        #self.window.parent = parent
-        self.progressBar = self.glade.get_widget('progressBar')
-        self.glade.signal_autoconnect({
-                'on_cancelButton_clicked': self.onCancel})
+        win = gtk.Window()
+        win.set_type_hint(gtk.gdk.WINDOW_TYPE_HINT_DIALOG)
+        win.set_position(gtk.WIN_POS_CENTER)
+        win.set_border_width(5)
+        win.set_title('sending file...')
+
+        vbox = gtk.VBox()
+        vbox.set_spacing(5)
+
+        self.progressBar = gtk.ProgressBar()
+        vbox.add(self.progressBar)
+
+        cb = gtk.Button()
+        cb.set_label('gtk-cancel')
+        cb.set_use_stock(True)
+        cb.connect('clicked', self.onCancel)
+        vbox.add(cb)
+
+        win.add(vbox)
+        win.show_all()
+        self.window = win
 
     def onCancel(self, widget):
+        # TODO: actually cancel the transfer 
         self.window.destroy()
 
     def scCallback(self, progress):
