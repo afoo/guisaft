@@ -1,0 +1,1 @@
+A simple SAFT client with a simple GUI which works at least under Windows and UNIX.
